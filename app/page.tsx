@@ -35,6 +35,8 @@ const exercisesList = {
   ],
 };
 
+type Category = 'pull' | 'push' | 'legs';
+
 // Funzione per ottenere la data e l'ora attuali nel formato YYYY-MM-DDTHH:MM
 const getTodayDateTime = () => {
   const today = new Date();
@@ -46,21 +48,32 @@ const getTodayDateTime = () => {
   return `${yyyy}-${mm}-${dd}T${hh}:${min}`;
 };
 
+interface Exercise {
+  id: number;
+  name: string;
+  repetitions: number;
+  weight: number;
+  sets: number;
+  date: string;
+  category: string;
+}
+
 export default function Home() {
-  const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<Category | ''>('');
   const [name, setName] = useState('');
   const [repetitions, setRepetitions] = useState('');
   const [weight, setWeight] = useState('');
   const [sets, setSets] = useState('');
   const [dateTime, setDateTime] = useState(getTodayDateTime());
-  const [exercises, setExercises] = useState([]);
-  const [filteredExercises, setFilteredExercises] = useState([]);
+  const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [filteredExercises, setFilteredExercises] = useState<Exercise[]>([]);
+  const [editExerciseId, setEditExerciseId] = useState<number | null>(null);
 
   useEffect(() => {
     const fetchExercises = async () => {
       const response = await fetch('/api/exercise');
       if (response.ok) {
-        const data = await response.json();
+        const data: Exercise[] = await response.json();
         setExercises(data);
       }
     };
@@ -76,29 +89,68 @@ export default function Home() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const response = await fetch('/api/exercise', {
-      method: 'POST',
+      method: editExerciseId ? 'PUT' : 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ name, repetitions: Number(repetitions), weight: Number(weight), sets: Number(sets), date: new Date(dateTime), category: selectedCategory }),
+      body: JSON.stringify({
+        id: editExerciseId,
+        name,
+        repetitions: Number(repetitions),
+        weight: Number(weight),
+        sets: Number(sets),
+        date: new Date(dateTime),
+        category: selectedCategory,
+      }),
     });
 
     if (response.ok) {
-      const newExercise = await response.json();
-      setExercises([...exercises, newExercise]);
+      const newExercise: Exercise = await response.json();
+      if (editExerciseId) {
+        setExercises(exercises.map(ex => (ex.id === editExerciseId ? newExercise : ex)));
+        setEditExerciseId(null);
+      } else {
+        setExercises([...exercises, newExercise]);
+      }
       // Reset the form fields
       setName('');
       setRepetitions('');
       setWeight('');
       setSets('');
       setDateTime(getTodayDateTime());
-      toast.success('Exercise added successfully!');
+      toast.success('Exercise added/updated successfully!');
     } else {
-      toast.error('Failed to add exercise.');
+      toast.error('Failed to add/update exercise.');
     }
   };
 
-  const handleCategorySelect = (category: string) => {
+  const handleEdit = (exercise: Exercise) => {
+    setEditExerciseId(exercise.id);
+    setName(exercise.name);
+    setRepetitions(exercise.repetitions.toString());
+    setWeight(exercise.weight.toString());
+    setSets(exercise.sets.toString());
+    setDateTime(new Date(exercise.date).toISOString().slice(0, 16));
+  };
+
+  const handleDelete = async (id: number) => {
+    const response = await fetch('/api/exercise', {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ id }),
+    });
+
+    if (response.ok) {
+      setExercises(exercises.filter(exercise => exercise.id !== id));
+      toast.success('Exercise deleted successfully!');
+    } else {
+      toast.error('Failed to delete exercise.');
+    }
+  };
+
+  const handleCategorySelect = (category: Category) => {
     setSelectedCategory(category);
     setName('');
     setRepetitions('');
@@ -154,7 +206,7 @@ export default function Home() {
                   required
                 >
                   <option value="">Select an exercise</option>
-                  {exercisesList[selectedCategory].map((exercise) => (
+                  {exercisesList[selectedCategory as Category].map((exercise) => (
                     <option key={exercise} value={exercise}>
                       {exercise}
                     </option>
@@ -199,22 +251,39 @@ export default function Home() {
                 value={weight}
                 onChange={(e) => setWeight(e.target.value)}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm text-black"
+                required
               />
             </div>
             <button
               type="submit"
               className="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 transition duration-300"
             >
-              Add Exercise
+              {editExerciseId ? 'Update Exercise' : 'Add Exercise'}
             </button>
           </form>
           <div className="mt-8 bg-white p-6 rounded-lg shadow-md max-w-md mx-auto">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Exercises</h2>
             <ul className="space-y-2">
               {filteredExercises.map((exercise) => (
-                <li key={exercise.id} className="border-b border-gray-200 pb-2">
-                  {exercise.name}: {exercise.repetitions} reps, {exercise.weight} kg, {exercise.sets} sets on{' '}
-                  {new Date(exercise.date).toLocaleString()}
+                <li key={exercise.id} className="border-b border-gray-200 pb-2 flex justify-between items-center">
+                  <div>
+                    {exercise.name}: {exercise.repetitions} reps, {exercise.weight} kg, {exercise.sets} sets on{' '}
+                    {new Date(exercise.date).toLocaleString()}
+                  </div>
+                  <div className="space-x-2">
+                    <button
+                      onClick={() => handleEdit(exercise)}
+                      className="px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition duration-300"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(exercise.id)}
+                      className="px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600 transition duration-300"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>
